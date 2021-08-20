@@ -58,6 +58,8 @@ typedef struct PSDContext {
     int width;
     int height;
 
+    short layer_count;
+
     enum PsdCompr compression;
     enum PsdColorMode color_mode;
 
@@ -90,6 +92,7 @@ static int decode_header(PSDContext * s)
     bytestream2_skip(&s->gb, 6);/* reserved */
 
     s->channel_count = bytestream2_get_be16(&s->gb);
+    av_log(s->avctx, AV_LOG_ERROR, "Channel count: %d.\n", s->channel_count);
     if ((s->channel_count < 1) || (s->channel_count > 56)) {
         av_log(s->avctx, AV_LOG_ERROR, "Invalid channel count %d.\n", s->channel_count);
         return AVERROR_INVALIDDATA;
@@ -118,8 +121,10 @@ static int decode_header(PSDContext * s)
         return ret;
 
     s->channel_depth = bytestream2_get_be16(&s->gb);
+    av_log(s->avctx, AV_LOG_ERROR, "Channel depth: %d.\n", s->channel_depth);
 
     color_mode = bytestream2_get_be16(&s->gb);
+    av_log(s->avctx, AV_LOG_ERROR, "Color mode: %d.\n", color_mode);
     switch (color_mode) {
     case 0:
         s->color_mode = PSD_BITMAP;
@@ -190,12 +195,18 @@ static int decode_header(PSDContext * s)
         av_log(s->avctx, AV_LOG_ERROR, "Negative size for layers and masks data section.\n");
         return AVERROR_INVALIDDATA;
     }
+    
+    bytestream2_skip(&s->gb, 4);
 
-    if (bytestream2_get_bytes_left(&s->gb) < len_section) {
+    s->layer_count = bytestream2_get_be16(&s->gb);
+
+    av_log(s->avctx, AV_LOG_ERROR, "Layer count: %d.\n", s->layer_count);
+
+    if (bytestream2_get_bytes_left(&s->gb) < len_section - 6) {
         av_log(s->avctx, AV_LOG_ERROR, "Incomplete file.\n");
         return AVERROR_INVALIDDATA;
     }
-    bytestream2_skip(&s->gb, len_section);
+    bytestream2_skip(&s->gb, len_section - 6);
 
     /* image section */
     if (bytestream2_get_bytes_left(&s->gb) < 2) {
@@ -360,7 +371,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
         }
         break;
     case PSD_RGB:
-        if (s->channel_count == 3) {
+        if (s->channel_count == 3 || s->layer_count >= 0) { // no transparency
             if (s->channel_depth == 8) {
                 avctx->pix_fmt = AV_PIX_FMT_GBRP;
             } else if (s->channel_depth == 16) {
@@ -369,7 +380,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
                 avpriv_report_missing_feature(avctx, "channel depth %d for rgb", s->channel_depth);
                 return AVERROR_PATCHWELCOME;
             }
-        } else if (s->channel_count == 4) {
+        } else { // transparency
             if (s->channel_depth == 8) {
                 avctx->pix_fmt = AV_PIX_FMT_GBRAP;
             } else if (s->channel_depth == 16) {
@@ -378,9 +389,6 @@ static int decode_frame(AVCodecContext *avctx, void *data,
                 avpriv_report_missing_feature(avctx, "channel depth %d for rgb", s->channel_depth);
                 return AVERROR_PATCHWELCOME;
             }
-        } else {
-            avpriv_report_missing_feature(avctx, "channel count %d for rgb", s->channel_count);
-            return AVERROR_PATCHWELCOME;
         }
         break;
     case PSD_DUOTONE:
@@ -521,7 +529,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
         if (s->channel_count == 1)/* gray 8 or gray 16be */
             eq_channel[0] = 0;/* assign first channel, to first plane */
 
-        for (c = 0; c < s->channel_count; c++) {
+        for (c = 0; c < ((s->channel_count == 3 || s->layer_count >= 0) ? 3 : 4); c++) {
             plane_number = eq_channel[c];
             ptr = picture->data[plane_number];/* get the right plane */
             for (y = 0; y < s->height; y++) {
