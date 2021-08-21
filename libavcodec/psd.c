@@ -317,6 +317,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
     s->channel_depth = 0;
     s->tmp           = NULL;
     s->line_size     = 0;
+    s->layer_count   = 0;
 
     bytestream2_init(&s->gb, avpkt->data, avpkt->size);
 
@@ -347,7 +348,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
         avctx->pix_fmt = AV_PIX_FMT_PAL8;
         break;
     case PSD_CMYK:
-        if (s->channel_count == 4) {
+        if (s->layer_count >= 0) {
             if (s->channel_depth == 8) {
                 avctx->pix_fmt = AV_PIX_FMT_GBRP;
             } else if (s->channel_depth == 16) {
@@ -356,7 +357,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
                 avpriv_report_missing_feature(avctx, "channel depth %d for cmyk", s->channel_depth);
                 return AVERROR_PATCHWELCOME;
             }
-        } else if (s->channel_count == 5) {
+        } else {
             if (s->channel_depth == 8) {
                 avctx->pix_fmt = AV_PIX_FMT_GBRAP;
             } else if (s->channel_depth == 16) {
@@ -365,13 +366,10 @@ static int decode_frame(AVCodecContext *avctx, void *data,
                 avpriv_report_missing_feature(avctx, "channel depth %d for cmyk", s->channel_depth);
                 return AVERROR_PATCHWELCOME;
             }
-        } else {
-            avpriv_report_missing_feature(avctx, "channel count %d for cmyk", s->channel_count);
-            return AVERROR_PATCHWELCOME;
         }
         break;
     case PSD_RGB:
-        if (s->channel_count == 3 || s->layer_count >= 0) { // no transparency
+        if (s->layer_count >= 0) { // no transparency
             if (s->channel_depth == 8) {
                 avctx->pix_fmt = AV_PIX_FMT_GBRP;
             } else if (s->channel_depth == 16) {
@@ -394,7 +392,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
     case PSD_DUOTONE:
         av_log(avctx, AV_LOG_WARNING, "ignoring unknown duotone specification.\n");
     case PSD_GRAYSCALE:
-        if (s->channel_count == 1) {
+        if (s->layer_count >= 0) {
             if (s->channel_depth == 8) {
                 avctx->pix_fmt = AV_PIX_FMT_GRAY8;
             } else if (s->channel_depth == 16) {
@@ -405,7 +403,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
                 avpriv_report_missing_feature(avctx, "channel depth %d for grayscale", s->channel_depth);
                 return AVERROR_PATCHWELCOME;
             }
-        } else if (s->channel_count == 2) {
+        } else {
             if (s->channel_depth == 8) {
                 avctx->pix_fmt = AV_PIX_FMT_YA8;
             } else if (s->channel_depth == 16) {
@@ -414,9 +412,6 @@ static int decode_frame(AVCodecContext *avctx, void *data,
                 avpriv_report_missing_feature(avctx, "channel depth %d for grayscale", s->channel_depth);
                 return AVERROR_PATCHWELCOME;
             }
-        } else {
-            avpriv_report_missing_feature(avctx, "channel count %d for grayscale", s->channel_count);
-            return AVERROR_PATCHWELCOME;
         }
         break;
     default:
@@ -454,10 +449,10 @@ static int decode_frame(AVCodecContext *avctx, void *data,
     /* Store data */
     if ((avctx->pix_fmt == AV_PIX_FMT_YA8)||(avctx->pix_fmt == AV_PIX_FMT_YA16BE)){/* Interleaved */
         ptr = picture->data[0];
-        for (c = 0; c < s->channel_count; c++) {
+        for (c = 0; c < 2; c++) {
             for (y = 0; y < s->height; y++) {
                 for (x = 0; x < s->width; x++) {
-                    index_out = y * picture->linesize[0] + x * s->channel_count * s->pixel_size + c * s->pixel_size;
+                    index_out = y * picture->linesize[0] + x * 2 * s->pixel_size + c * s->pixel_size;
                     for (p = 0; p < s->pixel_size; p++) {
                         ptr[index_out + p] = *ptr_data;
                         ptr_data ++;
@@ -526,10 +521,14 @@ static int decode_frame(AVCodecContext *avctx, void *data,
             }
         }
     } else {/* Planar */
-        if (s->channel_count == 1)/* gray 8 or gray 16be */
-            eq_channel[0] = 0;/* assign first channel, to first plane */
+        if (s->color_mode == PSD_RGB) {
+            s->channel_count = s->layer_count >= 0 ? 3 : 4;
+        } else { /* grayscale or bitmap */
+            eq_channel[0] = 0;
+            s->channel_count = 1;
+        }
 
-        for (c = 0; c < ((s->channel_count == 3 || s->layer_count >= 0) ? 3 : 4); c++) {
+        for (c = 0; c < s->channel_count; c++) {
             plane_number = eq_channel[c];
             ptr = picture->data[plane_number];/* get the right plane */
             for (y = 0; y < s->height; y++) {
