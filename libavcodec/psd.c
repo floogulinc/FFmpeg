@@ -92,7 +92,6 @@ static int decode_header(PSDContext * s)
     bytestream2_skip(&s->gb, 6);/* reserved */
 
     s->channel_count = bytestream2_get_be16(&s->gb);
-    av_log(s->avctx, AV_LOG_ERROR, "Channel count: %d.\n", s->channel_count);
     if ((s->channel_count < 1) || (s->channel_count > 56)) {
         av_log(s->avctx, AV_LOG_ERROR, "Invalid channel count %d.\n", s->channel_count);
         return AVERROR_INVALIDDATA;
@@ -121,10 +120,8 @@ static int decode_header(PSDContext * s)
         return ret;
 
     s->channel_depth = bytestream2_get_be16(&s->gb);
-    av_log(s->avctx, AV_LOG_ERROR, "Channel depth: %d.\n", s->channel_depth);
 
     color_mode = bytestream2_get_be16(&s->gb);
-    av_log(s->avctx, AV_LOG_ERROR, "Color mode: %d.\n", color_mode);
     switch (color_mode) {
     case 0:
         s->color_mode = PSD_BITMAP;
@@ -369,7 +366,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
         }
         break;
     case PSD_RGB:
-        if (s->layer_count >= 0) { // no transparency
+        if (s->layer_count >= 0) { /* no transparency */
             if (s->channel_depth == 8) {
                 avctx->pix_fmt = AV_PIX_FMT_GBRP;
             } else if (s->channel_depth == 16) {
@@ -378,7 +375,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
                 avpriv_report_missing_feature(avctx, "channel depth %d for rgb", s->channel_depth);
                 return AVERROR_PATCHWELCOME;
             }
-        } else { // transparency
+        } else { /* transparency */
             if (s->channel_depth == 8) {
                 avctx->pix_fmt = AV_PIX_FMT_GBRAP;
             } else if (s->channel_depth == 16) {
