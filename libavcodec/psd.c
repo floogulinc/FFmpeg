@@ -366,7 +366,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
         }
         break;
     case PSD_RGB:
-        if (s->layer_count >= 0) { /* no transparency */
+        if (s->layer_count >= 0) {/* no transparency */
             if (s->channel_depth == 8) {
                 avctx->pix_fmt = AV_PIX_FMT_GBRP;
             } else if (s->channel_depth == 16) {
@@ -375,7 +375,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
                 avpriv_report_missing_feature(avctx, "channel depth %d for rgb", s->channel_depth);
                 return AVERROR_PATCHWELCOME;
             }
-        } else { /* transparency */
+        } else {/* transparency */
             if (s->channel_depth == 8) {
                 avctx->pix_fmt = AV_PIX_FMT_GBRAP;
             } else if (s->channel_depth == 16) {
@@ -520,8 +520,8 @@ static int decode_frame(AVCodecContext *avctx, void *data,
     } else {/* Planar */
         if (s->color_mode == PSD_RGB) {
             s->channel_count = s->layer_count >= 0 ? 3 : 4;
-        } else { /* grayscale or bitmap */
-            eq_channel[0] = 0;
+        } else {/* grayscale or bitmap */
+            eq_channel[0] = 0;/* assign first channel, to first plane */
             s->channel_count = 1;
         }
 
